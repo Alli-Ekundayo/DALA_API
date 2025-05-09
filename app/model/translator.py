@@ -8,6 +8,10 @@ import tensorflow as tf
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.layers import Input
 import json
+import pandas as pd
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Encoder(tf.keras.Model):
     """Encoder model for the seq2seq translation system"""
@@ -79,6 +83,9 @@ class Translator:
         self.max_input_length = 0
         self.max_target_length = 0
         
+        # Add dictionary for direct lookups
+        self.dictionary = {}
+        
     def build_model(self, input_vocab_size, target_vocab_size):
         """Build the encoder and decoder models
         
@@ -117,8 +124,8 @@ class Translator:
             targ_tokenizer_data = json.load(f)
             
         from tensorflow.keras.preprocessing.text import tokenizer_from_json
-        self.inp_lang_tokenizer = tokenizer_from_json(inp_tokenizer_data)
-        self.targ_lang_tokenizer = tokenizer_from_json(targ_tokenizer_data)
+        self.inp_lang_tokenizer = tokenizer_from_json(json.dumps(inp_tokenizer_data))
+        self.targ_lang_tokenizer = tokenizer_from_json(json.dumps(targ_tokenizer_data))
         
         # Update vocabulary sizes
         self.input_vocab_size = len(self.inp_lang_tokenizer.word_index) + 1
@@ -132,9 +139,9 @@ class Translator:
         """
         os.makedirs(model_dir, exist_ok=True)
         
-        # Save encoder and decoder weights
-        self.encoder.save_weights(os.path.join(model_dir, 'encoder.h5'))
-        self.decoder.save_weights(os.path.join(model_dir, 'decoder.h5'))
+        # Save encoder and decoder weights with correct file extension
+        self.encoder.save_weights(os.path.join(model_dir, 'encoder.weights.h5'))
+        self.decoder.save_weights(os.path.join(model_dir, 'decoder.weights.h5'))
         
         # Save model metadata
         metadata = {
@@ -191,20 +198,67 @@ class Translator:
         decoder_input = tf.zeros((1, 1))
         self.decoder(decoder_input, dummy_hidden)
         
-        # Load weights
-        self.encoder.load_weights(os.path.join(model_dir, 'encoder.h5'))
-        self.decoder.load_weights(os.path.join(model_dir, 'decoder.h5'))
+        # Load weights with correct file extension
+        self.encoder.load_weights(os.path.join(model_dir, 'encoder.weights.h5'))
+        self.decoder.load_weights(os.path.join(model_dir, 'decoder.weights.h5'))
+    
+    def load_dictionary(self, data_path='data/clean_itsekiri.csv'):
+        """Load the dictionary from CSV file"""
+        try:
+            logger.info(f"Loading dictionary from {data_path}")
+            df = pd.read_csv(data_path)
+            # Create dictionary mapping from Itsekiri words to English translations
+            self.dictionary = {}
+            for _, row in df.iterrows():
+                itsekiri_word = str(row['new_target']).lower().strip()
+                english_trans = str(row['clean_translation']).strip()
+                if itsekiri_word and english_trans and itsekiri_word != 'nan' and english_trans != 'nan':
+                    if itsekiri_word in self.dictionary:
+                        # If word exists, append new meaning
+                        if english_trans not in self.dictionary[itsekiri_word]:
+                            self.dictionary[itsekiri_word] = f"{self.dictionary[itsekiri_word]} / {english_trans}"
+                    else:
+                        self.dictionary[itsekiri_word] = english_trans
+            logger.info(f"Loaded {len(self.dictionary)} dictionary entries")
+            # Log a few sample entries for verification
+            sample_entries = list(self.dictionary.items())[:5]
+            logger.debug(f"Sample dictionary entries: {sample_entries}")
+        except Exception as e:
+            logger.error(f"Failed to load dictionary: {str(e)}", exc_info=True)
     
     def translate(self, sentence, max_length=20):
-        """Translate an Itsekiri sentence to English
-        
-        Args:
-            sentence: The Itsekiri sentence to translate
-            max_length: Maximum length of the translated sentence
+        """Translate an Itsekiri sentence to English"""
+        try:
+            # Clean and preprocess input
+            cleaned = sentence.lower().strip()
             
-        Returns:
-            The translated English sentence
-        """
+            # Try direct dictionary lookup first
+            if cleaned in self.dictionary:
+                return self.dictionary[cleaned]
+                
+            # If compound word, try translating parts
+            if ' ' in cleaned or '-' in cleaned:
+                parts = cleaned.replace('-', ' ').split()
+                translations = []
+                for part in parts:
+                    if part in self.dictionary:
+                        translations.append(self.dictionary[part])
+                if translations:
+                    return ' + '.join(translations)
+            
+            # If no direct match, try neural translation
+            translated = self._neural_translate(sentence, max_length)
+            if translated.strip():
+                return translated
+                
+            return ""  # Return empty string if no translation found
+            
+        except Exception as e:
+            logger.error(f"Translation error: {str(e)}", exc_info=True)
+            return ""
+        
+    def _neural_translate(self, sentence, max_length=20):
+        """Internal method for neural translation"""
         # Tokenize and pad the input sentence
         sequence = self.inp_lang_tokenizer.texts_to_sequences([sentence])
         padded_sequence = tf.keras.preprocessing.sequence.pad_sequences(

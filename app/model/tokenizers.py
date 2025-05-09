@@ -131,3 +131,39 @@ def load_tokenizer(path):
     
     from tensorflow.keras.preprocessing.text import tokenizer_from_json
     return tokenizer_from_json(tokenizer_json)
+
+def create_or_load_tokenizers(itsekiri_texts, english_texts, itsekiri_tokenizer_path=None, english_tokenizer_path=None):
+    """Creates new tokenizers or loads existing ones if available
+    
+    Args:
+        itsekiri_texts (list): List of Itsekiri texts
+        english_texts (list): List of English texts
+        itsekiri_tokenizer_path (str, optional): Path to saved Itsekiri tokenizer
+        english_tokenizer_path (str, optional): Path to saved English tokenizer
+        
+    Returns:
+        tuple: (itsekiri_tokenizer, english_tokenizer)
+    """
+    try:
+        if itsekiri_tokenizer_path and english_tokenizer_path:
+            # Try to load existing tokenizers
+            itsekiri_tokenizer = load_tokenizer(itsekiri_tokenizer_path)
+            english_tokenizer = load_tokenizer(english_tokenizer_path)
+            return itsekiri_tokenizer, english_tokenizer
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    
+    # Create new tokenizers if loading failed or paths weren't provided
+    cleaned_itsekiri = [clean_itsekiri_text(text) for text in itsekiri_texts]
+    cleaned_english = [clean_english_text(text) for text in english_texts]
+    
+    itsekiri_tokenizer = create_tokenizers(cleaned_itsekiri)
+    english_tokenizer = create_tokenizers(cleaned_english)
+    
+    # Save the new tokenizers if paths were provided
+    if itsekiri_tokenizer_path:
+        save_tokenizer(itsekiri_tokenizer, itsekiri_tokenizer_path)
+    if english_tokenizer_path:
+        save_tokenizer(english_tokenizer, english_tokenizer_path)
+    
+    return itsekiri_tokenizer, english_tokenizer

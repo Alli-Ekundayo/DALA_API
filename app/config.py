@@ -9,9 +9,12 @@ class Config:
     DEBUG = False
     TESTING = False
     VERSION = "1.0.0"
+    HOST = os.environ.get('HOST', '0.0.0.0')  # Default host that allows external connections
+    PORT = int(os.environ.get('PORT', 5000))  # Default Flask port
     
     # Model settings
     MODEL_DIR = os.environ.get('MODEL_DIR', 'models')
+    MODEL_PATH = os.environ.get('MODEL_PATH', 'models/itsekiri_translator_20250507_215757')  # Latest trained model
     BATCH_SIZE = 1
     EMBEDDING_DIM = 256
     UNITS = 512
