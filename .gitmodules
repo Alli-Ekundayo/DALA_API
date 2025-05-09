@@ -1,0 +1,3 @@
+[submodule "Dala-ML"]
+	path = Dala-ML
+	url = https://github.com/Dala-Innovation/Dala-ML.git
